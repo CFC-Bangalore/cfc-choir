@@ -1012,7 +1012,7 @@ function FeedbackModal({onClose,isAdmin,adminUser,toast,fbReady}){
         // Fallback: open mailto
         const subject=encodeURIComponent('CFC Choir Feedback: '+(type||'general'));
         const body=encodeURIComponent('Type: '+type+'\nFrom: '+(isAdmin?adminUser?.name||'Admin':'Member')+'\n\n'+msg.trim());
-        window.open('mailto:cfcbangalorechoir@gmail.com?subject='+subject+'&body='+body,'_blank');
+        window.open('mailto:samkrupakar73@gmail.com?subject='+subject+'&body='+body,'_blank');
         toast('Opening email as fallback. Please send it.','info');
         setMsg('');onClose();
       }
