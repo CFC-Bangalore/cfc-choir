@@ -2520,7 +2520,7 @@ function CooldownsTab({songs,history,saveSong,toast,isAdmin}){
                 else{dateIds.forEach(id=>n.add(id));}
                 return n;
               }),style:{width:15,height:15,accentColor:'var(--burg)',cursor:'pointer'}}),
-              'Select all the songs for this Date')),
+              'Select all songs for this Date')),
           h('ul',{className:'song-list'},byDate[dateKey].map(s=>{
             const days=s.daysLeft;
             const color=urgencyColor(days);
