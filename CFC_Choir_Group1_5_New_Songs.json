@@ -1,0 +1,84 @@
+{
+  "format": "cfc-choir-group1-new-songs-v1",
+  "songs": [
+    {
+      "handwrittenNo": 1,
+      "title": "Be Honour & Glory Forever & Ever",
+      "handwrittenPages": [
+        1
+      ],
+      "chordSource": "Handwritten page 1",
+      "needsReview": true,
+      "lyrics": "Unto the King eternal, immortal\nInvisible, the only wise God\n\nBe honour & glory forever & ever\nBe honour & glory forever more\n\nHonour & glory & power & might\nBe unto Jesus our King\n\nBe all the honour forever & ever\nBe all the glory forever\n\nAll adoration\nAll of the praise\nForever & ever more"
+    },
+    {
+      "handwrittenNo": 33,
+      "title": "Shadow Dispelling With Joy I Am Telling",
+      "handwrittenPages": [
+        30
+      ],
+      "chordSource": "Handwritten page 30",
+      "boundaryNote": "Stop before 'From Heaven You Came'; that is a different song on the same notebook page.",
+      "needsReview": true,
+      "lyrics": "Shadow dispelling with joy I am telling\nHe made the darkness depart\nHeaven came down and glory filled my soul\nWhen at the cross my Saviour made me whole\nMy sins are washed away\nAnd my night is turned to day\nHeaven came down and glory filled my soul"
+    },
+    {
+      "handwrittenNo": 95,
+      "title": "The Lord Giveth a Word of Good Tidings",
+      "handwrittenPages": [
+        65
+      ],
+      "chordSource": "Handwritten page 65",
+      "boundaryNote": "Stop before 'In Heavenly Armour We'll Enter the Land'; that is a different song on the same notebook page.",
+      "needsReview": true,
+      "lyrics": "The Lord giveth a word of good tidings\nI will press on and make them mine\nI'll know His power, I'll know His glory\nAnd in His kingdom I will shine\nWith the high praises of God in my mouth\nAnd a two edged sword in my hand\nWe'll wage right on to victory"
+    },
+    {
+      "handwrittenNo": 120,
+      "title": "Giving Glory, Giving Honour / Giving Praise Unto the Lamb of God",
+      "handwrittenPages": [
+        81
+      ],
+      "arrangementNotes": [
+        "VIOLIN INTRO"
+      ],
+      "chordSource": "Handwritten page 81",
+      "needsReview": true,
+      "lyrics": "Giving glory, giving honour\nGiving praise unto the Lamb of God\nGiving glory, giving honour\nGiving praise unto the Lamb of God\nJesus Christ, Lamb of God"
+    },
+    {
+      "handwrittenNo": 165,
+      "title": "O Lord, For Thou Art High Above the Earth",
+      "handwrittenPages": [
+        123
+      ],
+      "chordSource": "Handwritten page 123",
+      "needsReview": true,
+      "lyrics": "O Lord\nFor Thou art high above the earth\nThou art exalted far above all gods\n\nFor Thou O Lord art high\nAbove the earth\nThou art exalted far above all gods"
+    }
+  ],
+  "excludedDecisions": [
+    {
+      "handwrittenNo": 139,
+      "decision": "Do not create as a separate song",
+      "action": "Keep this handwritten section as part of 'I Have Found a Fortress in the Living God'."
+    },
+    {
+      "handwrittenNo": 151,
+      "decision": "Skip/remove",
+      "action": "Do not import."
+    },
+    {
+      "handwrittenNo": 152,
+      "decision": "Skip/remove",
+      "action": "Do not import."
+    }
+  ],
+  "importInstructions": [
+    "These five records are approved as genuinely new songs.",
+    "Do not invent missing lyrics or chords.",
+    "The handwritten notebook page is the chord authority.",
+    "Convert handwritten chords into the existing PWA chord schema only when exact placement can be established.",
+    "Do not overwrite or modify unrelated existing songs."
+  ]
+}
