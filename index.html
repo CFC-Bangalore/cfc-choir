@@ -2380,9 +2380,334 @@ function renderChordLine(text,key){
   return h('div',{key,style:{marginBottom:2,lineHeight:1.9,fontFamily:"SFMono-Regular,Menlo,monospace",fontSize:14,whiteSpace:'pre-wrap',animation:'fadeIn .3s ease both',animationDelay:Math.min(key*15,300)+'ms'}},
     parts.map((p,i)=>{
       const m=p.match(/^\[([A-G][#b]?[^\]]*)\]$/);
-      if(m)return h('span',{key:i,style:{color:'var(--burg)',fontWeight:800}},m[1]);
+      if(m){
+        const isUncertain=m[1].includes('?');
+        return h('span',{key:i,style:{color:isUncertain?'var(--amber)':'var(--burg)',fontWeight:800,borderBottom:isUncertain?'1.5px dashed var(--amber)':'none',padding:isUncertain?'0 2px':'0'}},m[1]);
+      }
       return h('span',{key:i},p);
     }));
+}
+
+
+const CHORD_TOKEN_REGEX = /^[A-G][#b♭♯]?(?:maj|min|m|dim|aug|sus|add|Δ|[\+\-0-9])*(?:\/[A-G][#b♭♯]?)?$/i;
+const SECTION_HEADER_REGEX = /^\s*\[?\s*(Verse|Chorus|Bridge|Pre-Chorus|PreChorus|Intro|Outro|Tag|Solo|Instrumental|Refrain|Ending|Interlude|Hook|Turnaround|Post-Chorus|PostChorus|Coda|Tab)(\s*\d*)?\s*\]?\s*:?\s*$/i;
+
+function isChordToken(token) {
+  if (!token) return false;
+  const clean = token.replace(/[\(\)\,\;\:\.\#]/g, '').trim();
+  return CHORD_TOKEN_REGEX.test(clean);
+}
+
+function classifyLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return { type: 'EMPTY' };
+  
+  if (SECTION_HEADER_REGEX.test(trimmed)) {
+    const match = trimmed.match(SECTION_HEADER_REGEX);
+    const secType = match[1];
+    const secNum = match[2] ? match[2].trim() : '';
+    const formatted = '[' + secType.charAt(0).toUpperCase() + secType.slice(1).toLowerCase() + (secNum ? ' ' + secNum : '') + ']';
+    return { type: 'SECTION', text: formatted };
+  }
+
+  const inlineBrackets = trimmed.match(/\[([A-G][#b♭♯]?[^\]]*)\]/g);
+  if (inlineBrackets && inlineBrackets.length > 0) {
+    const validCount = inlineBrackets.filter(b => isChordToken(b.replace(/[\[\]]/g, ''))).length;
+    if (validCount > 0 && validCount >= inlineBrackets.length * 0.5) {
+      return { type: 'INLINE', text: trimmed };
+    }
+  }
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length > 0) {
+    let validChordCount = 0;
+    let nonChordWordCount = 0;
+    for (const tok of tokens) {
+      if (isChordToken(tok) || /^[\#\|\/\-\+\:\.\(\)]+$/.test(tok)) {
+        validChordCount++;
+      } else {
+        if (tok.length > 3) nonChordWordCount++;
+      }
+    }
+    if (validChordCount > 0 && (validChordCount === tokens.length || (validChordCount / tokens.length >= 0.7 && nonChordWordCount === 0))) {
+      return { type: 'CHORDS_ABOVE', tokens };
+    }
+  }
+
+  return { type: 'LYRICS', text: line };
+}
+
+function alignChordsToLyricLine(chordPositions, lyricLine) {
+  if (!lyricLine || !lyricLine.trim()) {
+    return chordPositions.map(c => `[${c.chord}]`).join(' ');
+  }
+
+  const sortedChordPositions = [...chordPositions].sort((a, b) => a.pos - b.pos);
+
+  const wordStarts = [];
+  const reWord = /\S+/g;
+  let wMatch;
+  while ((wMatch = reWord.exec(lyricLine)) !== null) {
+    wordStarts.push({ word: wMatch[0], start: wMatch.index, end: wMatch.index + wMatch[0].length });
+  }
+
+  if (wordStarts.length === 0) {
+    return sortedChordPositions.map(c => `[${c.chord}]`).join(' ') + ' ' + lyricLine;
+  }
+
+  const indexGroups = new Map();
+
+  for (const c of sortedChordPositions) {
+    let insertAt = Math.min(c.pos, lyricLine.length);
+    let matchedWord = null;
+
+    for (const ws of wordStarts) {
+      if (c.pos >= ws.start && c.pos < ws.end) {
+        matchedWord = ws;
+        break;
+      }
+      if (c.pos < ws.start) {
+        matchedWord = ws;
+        break;
+      }
+    }
+
+    if (matchedWord) {
+      insertAt = matchedWord.start;
+    } else {
+      insertAt = wordStarts[wordStarts.length - 1].start;
+    }
+
+    if (!indexGroups.has(insertAt)) {
+      indexGroups.set(insertAt, []);
+    }
+    indexGroups.get(insertAt).push(c.chord);
+  }
+
+  const uniqueIndices = Array.from(indexGroups.keys()).sort((a, b) => b - a);
+
+  let built = lyricLine;
+  for (const idx of uniqueIndices) {
+    const chordsAtIndex = indexGroups.get(idx);
+    const combinedChords = chordsAtIndex.map(ch => `[${ch}]`).join('');
+    built = built.slice(0, idx) + combinedChords + built.slice(idx);
+  }
+
+  return built;
+}
+
+function parsePastedChordSheet(pastedText) {
+  if (!pastedText || !pastedText.trim()) {
+    return { parsedChords: '', pastedLyrics: '' };
+  }
+
+  let cleaned = pastedText.replace(/\r\n/g, '\n');
+  cleaned = cleaned.replace(/\[\/?tab\]/gi, '');
+  cleaned = cleaned.replace(/<[^>]*>/g, '');
+
+  const rawLines = cleaned.split('\n');
+  const classified = rawLines.map(l => ({ raw: l, ...classifyLine(l) }));
+
+  const resultLines = [];
+  const pastedLyricLines = [];
+
+  for (let i = 0; i < classified.length; i++) {
+    const curr = classified[i];
+
+    if (curr.type === 'EMPTY') {
+      resultLines.push('');
+      pastedLyricLines.push('');
+      continue;
+    }
+
+    if (curr.type === 'SECTION') {
+      resultLines.push(curr.text);
+      continue;
+    }
+
+    if (curr.type === 'INLINE') {
+      resultLines.push(curr.raw.trim());
+      const lyricOnly = curr.raw.replace(/\[[^\]]*\]/g, '').trim();
+      if (lyricOnly) pastedLyricLines.push(lyricOnly);
+      continue;
+    }
+
+    if (curr.type === 'CHORDS_ABOVE') {
+      let nextLyricIdx = -1;
+      for (let j = i + 1; j < classified.length; j++) {
+        if (classified[j].type === 'EMPTY') continue;
+        if (classified[j].type === 'LYRICS') {
+          nextLyricIdx = j;
+          break;
+        }
+      }
+
+      const chordPositions = [];
+      const re = /([A-G][#b♭♯]?(?:maj|min|m|dim|aug|sus|add|Δ|[\+\-0-9])*(?:\/[A-G][#b♭♯]?)?)/gi;
+      let match;
+      while ((match = re.exec(curr.raw)) !== null) {
+        if (isChordToken(match[1])) {
+          chordPositions.push({ chord: match[1], pos: match.index });
+        }
+      }
+
+      if (nextLyricIdx !== -1 && chordPositions.length > 0) {
+        const lyricLine = classified[nextLyricIdx].raw;
+        const merged = alignChordsToLyricLine(chordPositions, lyricLine);
+        resultLines.push(merged);
+        pastedLyricLines.push(lyricLine.trim());
+        i = nextLyricIdx;
+      } else {
+        const bracketed = chordPositions.map(c => `[${c.chord}]`).join(' ');
+        resultLines.push(bracketed || curr.raw.trim());
+      }
+      continue;
+    }
+
+    if (curr.type === 'LYRICS') {
+      resultLines.push(curr.raw.trim());
+      pastedLyricLines.push(curr.raw.trim());
+    }
+  }
+
+  const parsedChords = resultLines.join('\n');
+  const pastedLyrics = pastedLyricLines.filter(Boolean).join('\n');
+
+  return { parsedChords, pastedLyrics };
+}
+
+function normalizeLyricText(text) {
+  if (!text) return '';
+  return text
+    .replace(/\[[^\]]*\]/g, ' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function calculateLyricSimilarity(pastedLyrics, currentLyrics) {
+  const normP = normalizeLyricText(pastedLyrics);
+  const normC = normalizeLyricText(currentLyrics);
+
+  if (!normP && !normC) return { matchPercent: 100, status: 'HIGH' };
+  if (!normP || !normC) return { matchPercent: 0, status: 'LOW' };
+
+  const wordsP = normP.split(' ').filter(Boolean);
+  const wordsC = normC.split(' ').filter(Boolean);
+
+  if (wordsP.length === 0 && wordsC.length === 0) return { matchPercent: 100, status: 'HIGH' };
+
+  const getBigrams = words => {
+    const set = new Set();
+    for (let i = 0; i < words.length - 1; i++) {
+      set.add(words[i] + ' ' + words[i + 1]);
+    }
+    return set;
+  };
+
+  const bigramsP = getBigrams(wordsP);
+  const bigramsC = getBigrams(wordsC);
+
+  let intersectBigrams = 0;
+  for (const b of bigramsP) {
+    if (bigramsC.has(b)) intersectBigrams++;
+  }
+
+  const bigramScore = (bigramsP.size + bigramsC.size) > 0 
+    ? (2 * intersectBigrams) / (bigramsP.size + bigramsC.size) 
+    : 0;
+
+  const setP = new Set(wordsP);
+  const setC = new Set(wordsC);
+  let intersectWords = 0;
+  for (const w of setP) {
+    if (setC.has(w)) intersectWords++;
+  }
+  const unionWords = new Set([...setP, ...setC]).size;
+  const wordScore = unionWords > 0 ? intersectWords / unionWords : 0;
+
+  const combined = Math.round((0.6 * bigramScore + 0.4 * wordScore) * 100);
+  const matchPercent = Math.min(100, Math.max(0, combined));
+
+  let status = 'HIGH';
+  if (matchPercent < 45) status = 'LOW';
+  else if (matchPercent < 75) status = 'MODERATE';
+
+  return { matchPercent, status };
+}
+
+function mapChordsToExistingLyrics(parsedPastedChords, currentLyrics) {
+  if (!parsedPastedChords || !currentLyrics) {
+    return { mappedChords: currentLyrics || '', hasUncertain: false };
+  }
+
+  const pastedLines = parsedPastedChords.split('\n');
+  const chordMap = [];
+
+  for (const line of pastedLines) {
+    if (SECTION_HEADER_REGEX.test(line)) continue;
+    const re = /\[([A-G][#b♭♯]?[^\]]*)\]/g;
+    let match;
+    const lineChords = [];
+    while ((match = re.exec(line)) !== null) {
+      lineChords.push({ chord: match[1], index: match.index, len: match[0].length });
+    }
+    
+    let textOnly = line.replace(/\[[^\]]*\]/g, ' ');
+    const words = textOnly.split(/\s+/).filter(Boolean);
+
+    for (const c of lineChords) {
+      const normWord = words.find(w => normalizeLyricText(w)) || '';
+      chordMap.push({ chord: c.chord, word: normalizeLyricText(normWord) });
+    }
+  }
+
+  const pwaLines = currentLyrics.split('\n');
+  let hasUncertain = false;
+  let chordIdx = 0;
+
+  const mappedLines = pwaLines.map(line => {
+    if (!line.trim() || SECTION_HEADER_REGEX.test(line)) return line;
+    const wordsInLine = line.split(/(\s+)/);
+
+    let newLine = '';
+    for (const token of wordsInLine) {
+      const normToken = normalizeLyricText(token);
+      if (normToken && chordIdx < chordMap.length) {
+        const target = chordMap[chordIdx];
+        if (target.word && (normToken.includes(target.word) || target.word.includes(normToken))) {
+          newLine += `[${target.chord}]` + token;
+          chordIdx++;
+        } else if (target.word === '') {
+          newLine += `[${target.chord}]` + token;
+          chordIdx++;
+        } else {
+          if (chordIdx + 1 < chordMap.length && chordMap[chordIdx + 1].word && normToken.includes(chordMap[chordIdx + 1].word)) {
+            newLine += `[${target.chord}?]`;
+            hasUncertain = true;
+            chordIdx++;
+            newLine += `[${chordMap[chordIdx].chord}]` + token;
+            chordIdx++;
+          } else {
+            newLine += token;
+          }
+        }
+      } else {
+        newLine += token;
+      }
+    }
+    return newLine;
+  });
+
+  let mappedChords = mappedLines.join('\n');
+  while (chordIdx < chordMap.length) {
+    mappedChords += ` [${chordMap[chordIdx].chord}?]`;
+    hasUncertain = true;
+    chordIdx++;
+  }
+
+  return { mappedChords, hasUncertain };
 }
 
 
@@ -2414,24 +2739,79 @@ function LyricsModal({song,history,onClose,saveSong,isAdmin}){
   const[viewMode,setViewMode]=useState('lyrics');
   const[tr,setTr]=useState(0);
   const[editingChords,setEditingChords]=useState(false);
+  const[editSubMode,setEditSubMode]=useState('paste'); // 'paste' | 'raw'
+  const[pasteStep,setPasteStep]=useState('input'); // 'input' | 'preview' | 'review'
+  const[pastedInputText,setPastedInputText]=useState('');
+  const[parsedResult,setParsedResult]=useState(null);
+  const[simResult,setSimResult]=useState(null);
+  const[mappedResult,setMappedResult]=useState(null);
+  const[pasteOption,setPasteOption]=useState(1); // 1 = Keep PWA lyrics + chords, 2 = Use pasted lyrics + chords
   const[localChords,setLocalChords]=useState(song.chords||'');
   const[chordsDraft,setChordsDraft]=useState(song.chords||'');
   const[savingChords,setSavingChords]=useState(false);
-  useEffect(()=>{setLocalChords(song.chords||'');setChordsDraft(song.chords||'');},[song.id]);
+
+  useEffect(()=>{
+    setLocalChords(song.chords||'');
+    setChordsDraft(song.chords||'');
+  },[song.id]);
+
   const chordSheet=useMemo(()=>localChords?formatChordSheet(localChords):[],[localChords]);
   const chordSheetTr=useMemo(()=>chordSheet.map(item=>item.type==='line'?{...item,text:transposeChordLine(item.text,tr)}:item),[chordSheet,tr]);
   const parsed=useMemo(()=>parseChords(song.lyrics,tr),[song,tr]);
   const hasEmbeddedChords=useMemo(()=>parsed.some(l=>l.chords&&l.chords.length),[parsed]);
   const ls=lastSungOf(song,history||[]);
   const dispKey=(song.scale||'').trim()?fmtKey(song.scale):'—';
-  const saveChords=async()=>{
+
+  const handleAnalyseAndPreview=()=>{
+    if(!pastedInputText.trim())return;
+    const pRes=parsePastedChordSheet(pastedInputText);
+    const sRes=calculateLyricSimilarity(pRes.pastedLyrics,song.lyrics);
+    const mRes=mapChordsToExistingLyrics(pRes.parsedChords,song.lyrics);
+    setParsedResult(pRes);
+    setSimResult(sRes);
+    setMappedResult(mRes);
+    setPasteStep('preview');
+  };
+
+  const cancelPasteMode=()=>{
+    setEditingChords(false);
+    setEditSubMode('paste');
+    setPasteStep('input');
+    setPastedInputText('');
+    setParsedResult(null);
+    setSimResult(null);
+    setMappedResult(null);
+    setPasteOption(1);
+  };
+
+  const saveChords=async(customChords,newLyrics=null)=>{
     if(!saveSong)return;
     setSavingChords(true);
-    await saveSong({...song,chords:chordsDraft});
-    setLocalChords(chordsDraft);
+    const finalChords = customChords !== undefined ? customChords : chordsDraft;
+    const updatedSong = {...song, chords: finalChords};
+    if (newLyrics && pasteOption === 2) {
+      updatedSong.lyrics = newLyrics;
+    }
+    await saveSong(updatedSong);
+    setLocalChords(finalChords);
     setSavingChords(false);
-    setEditingChords(false);
+    cancelPasteMode();
   };
+
+  const previewSheetChords = useMemo(()=>{
+    if (!parsedResult) return '';
+    if (pasteOption === 1 && mappedResult) return mappedResult.mappedChords;
+    return parsedResult.parsedChords;
+  },[parsedResult, mappedResult, pasteOption]);
+
+  const previewSheetFormatted = useMemo(()=>
+    previewSheetChords ? formatChordSheet(previewSheetChords) : []
+  ,[previewSheetChords]);
+
+  const previewSheetTr = useMemo(()=>
+    previewSheetFormatted.map(item => item.type==='line' ? {...item, text: transposeChordLine(item.text, tr)} : item)
+  ,[previewSheetFormatted, tr]);
+
   return h('div',{className:'overlay',onClick:onClose},
     h('div',{className:'modal',onClick:e=>e.stopPropagation()},
       h('div',{className:'modal-drag'}),
@@ -2449,31 +2829,99 @@ function LyricsModal({song,history,onClose,saveSong,isAdmin}){
         h('button',{className:'modal-close',onClick:onClose},'×')),
       h('div',{className:'modal-controls'},
         h('div',{className:'seg',style:{marginRight:8}},
-          h('button',{className:`seg-btn${viewMode==='lyrics'?' active':''}`,onClick:()=>{setViewMode('lyrics');setEditingChords(false);}},'Lyrics'),
+          h('button',{className:`seg-btn${viewMode==='lyrics'?' active':''}`,onClick:()=>{setViewMode('lyrics');cancelPasteMode();}},'Lyrics'),
           h('button',{className:`seg-btn${viewMode==='chords'?' active':''}`,onClick:()=>setViewMode('chords')},'Chords')),
         viewMode==='chords'&&!editingChords&&h('div',{className:'transpose-wrap'},
           h('button',{className:'transpose-btn',onClick:()=>setTr(t=>t-1)},'−'),
           h('span',{className:'transpose-val'},tr===0?'Original Key':tr>0?`+${tr} semitones`:`${tr} semitones`),
           h('button',{className:'transpose-btn',onClick:()=>setTr(t=>t+1)},'+'),
           tr!==0&&h('button',{className:'btn btn-ghost btn-xs',onClick:()=>setTr(0),style:{fontSize:12}},'Reset')),
-        viewMode==='chords'&&isAdmin&&saveSong&&h('button',{
+        viewMode==='chords'&&saveSong&&h('button',{
           className:'btn btn-xs bounce-tap '+(editingChords?'btn-primary':'btn-outline'),
-          onClick:()=>{if(editingChords){saveChords();}else{setChordsDraft(localChords||'');setEditingChords(true);}},
+          onClick:()=>{if(editingChords){if(editSubMode==='raw'){saveChords(chordsDraft);}}else{setChordsDraft(localChords||'');setEditingChords(true);setEditSubMode('paste');setPasteStep('input');}},
           disabled:savingChords
-        },savingChords?'Saving…':editingChords?'💾 Save':'✏️ Edit'),
-        viewMode==='chords'&&editingChords&&h('button',{className:'btn btn-ghost btn-xs',onClick:()=>setEditingChords(false)},'Cancel')),
+        },savingChords?'Saving…':editingChords?(editSubMode==='raw'?'💾 Save':'Editing'):'✏️ Edit Chords'),
+        viewMode==='chords'&&editingChords&&h('button',{className:'btn btn-ghost btn-xs',onClick:cancelPasteMode},'Cancel')),
       h('div',{className:'modal-body'},
         viewMode==='lyrics'?h('div',{className:'lyrics-wrap'},
           song.lyrics.split('\n').map((line,i)=>
             !line.trim()?h('div',{key:i,className:'lyric-gap'}):h('div',{key:i,className:'lyric-block'},h('span',{className:'lyric-line'},line.replace(/\[[^\]]*\]/g,'').trim()||'\u00A0'))))
         :editingChords?h('div',null,
-          h('textarea',{
-            className:'field-textarea',value:chordsDraft,onChange:e=>setChordsDraft(e.target.value),
-            rows:16,style:{fontFamily:'SFMono-Regular,Menlo,monospace',fontSize:13,width:'100%'},
-            placeholder:'[Verse 1]\n[G]Amazing [D]grace...'
-          }),
-          h('div',{className:'field-hint',style:{marginTop:6}},'Use [Chord] before words, and [Verse]/[Chorus]/[Bridge] section labels on their own line.'))
+          h('div',{style:{display:'flex',gap:8,marginBottom:12,borderBottom:'1px solid var(--border)',paddingBottom:8}},
+            h('button',{className:`btn btn-xs ${editSubMode==='paste'?'btn-primary':'btn-ghost'}`,onClick:()=>setEditSubMode('paste')},'📋 Paste Chord Sheet'),
+            h('button',{className:`btn btn-xs ${editSubMode==='raw'?'btn-primary':'btn-ghost'}`,onClick:()=>setEditSubMode('raw')},'✏️ Raw Editor')),
+          editSubMode==='raw'?h('div',null,
+            h('textarea',{
+              className:'field-textarea',value:chordsDraft,onChange:e=>setChordsDraft(e.target.value),
+              rows:14,style:{fontFamily:'SFMono-Regular,Menlo,monospace',fontSize:13,width:'100%'},
+              placeholder:'[Verse 1]\n[G]Amazing [D]grace...'
+            }),
+            h('div',{className:'field-hint',style:{marginTop:6}},'Use [Chord] before words, and [Verse]/[Chorus]/[Bridge] section labels on their own line.'))
+          :pasteStep==='input'?h('div',null,
+            h('div',{style:{fontSize:13,fontWeight:600,marginBottom:6,color:'var(--text2)'}},'Paste Complete Chord Sheet'),
+            h('textarea',{
+              className:'field-textarea',value:pastedInputText,onChange:e=>setPastedInputText(e.target.value),
+              rows:12,style:{fontFamily:'SFMono-Regular,Menlo,monospace',fontSize:12.5,width:'100%'},
+              placeholder:'Paste chords-above-lyrics, [tab] wrappers, or inline [Chord] sheets here...\n\nExample:\n[Verse 1]\n     F              Bb/F       F\nAmazing Grace, how sweet the sound...'
+            }),
+            h('div',{style:{display:'flex',gap:8,marginTop:10,justify:'flex-end'}},
+              h('button',{className:'btn btn-ghost btn-sm',onClick:cancelPasteMode},'Cancel'),
+              h('button',{className:'btn btn-primary btn-sm',disabled:!pastedInputText.trim(),onClick:handleAnalyseAndPreview},'🔍 Analyse & Preview')))
+          :pasteStep==='preview'?h('div',null,
+            simResult&&h('div',{style:{
+              padding:'10px 14px',borderRadius:12,marginBottom:12,fontSize:13,fontWeight:600,
+              background:simResult.status==='HIGH'?'var(--green-bg)':simResult.status==='MODERATE'?'var(--amber-bg)':'var(--red-bg)',
+              color:simResult.status==='HIGH'?'var(--green)':simResult.status==='MODERATE'?'var(--amber)':'var(--red)',
+              border:`1px solid ${simResult.status==='HIGH'?'var(--green-bd)':simResult.status==='MODERATE'?'rgba(154,108,24,0.3)':'var(--red-bd)'}`
+            }},
+              simResult.status==='HIGH'?`✓ Lyrics Match: ${simResult.matchPercent}% — Appears to be the same song.`
+              :simResult.status==='MODERATE'?`⚠️ Lyrics Match: ${simResult.matchPercent}% — Minor lyric or formatting differences detected.`
+              :`🚨 POSSIBLE WRONG SONG (Lyrics Match: ${simResult.matchPercent}%)\nThe pasted chord sheet may belong to a different song. Please review carefully before saving.`),
+            
+            h('div',{style:{fontSize:13,fontWeight:700,margin:'8px 0 6px',color:'var(--text)'}},'Choose Lyric & Chord Handling:'),
+            h('div',{style:{display:'flex',flexDirection:'column',gap:6,marginBottom:14}},
+              h('label',{style:{display:'flex',alignItems:'center',gap:8,fontSize:13,cursor:'pointer'}},
+                h('input',{type:'radio',name:'pasteOpt',checked:pasteOption===1,onChange:()=>setPasteOption(1)}),
+                '1. Keep Current PWA Lyrics + Apply Chords'),
+              h('label',{style:{display:'flex',alignItems:'center',gap:8,fontSize:13,cursor:'pointer'}},
+                h('input',{type:'radio',name:'pasteOpt',checked:pasteOption===2,onChange:()=>setPasteOption(2)}),
+                '2. Use Pasted Lyrics + Chords'),
+              h('button',{className:'btn btn-ghost btn-xs',style:{alignSelf:'flex-start',marginTop:2},onClick:()=>setPasteStep('review')},'🔍 Review Differences')),
+
+            mappedResult&&mappedResult.hasUncertain&&pasteOption===1&&h('div',{style:{fontSize:12,color:'var(--amber)',background:'var(--amber-bg)',padding:'6px 10px',borderRadius:8,marginBottom:10}},
+              '⚠️ Some chords could not be mapped to the PWA lyrics with full confidence (marked with ? below).'),
+
+            h('div',{style:{fontSize:12,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}},'Live Transposable Preview:'),
+            h('div',{style:{background:'rgba(255,255,255,0.6)',padding:12,borderRadius:12,border:'1px solid var(--border)',maxHeight:240,overflowY:'auto',marginBottom:12}},
+              previewSheetTr.map((item,i)=>{
+                if(item.type==='section')return h('div',{key:i,style:{fontSize:11,fontWeight:800,color:'var(--burg)',textTransform:'uppercase',letterSpacing:'0.5px',margin:'12px 0 4px'}},item.text);
+                if(item.type==='gap')return h('div',{key:i,style:{height:6}});
+                return renderChordLine(item.text,i);
+              })),
+            
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:12}},
+              h('button',{className:'btn btn-ghost btn-sm',onClick:()=>setPasteStep('input')},'← Back to Edit'),
+              h('button',{
+                className:'btn btn-primary btn-sm',
+                disabled:savingChords,
+                onClick:()=>saveChords(previewSheetChords, parsedResult ? parsedResult.pastedLyrics : null)
+              },savingChords?'Saving…':'💾 Save Chords')))
+
+          :pasteStep==='review'?h('div',null,
+            h('div',{style:{fontSize:14,fontWeight:700,marginBottom:8,color:'var(--text)'}},'Lyric Differences Review'),
+            h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}},
+              h('div',null,
+                h('div',{style:{fontSize:12,fontWeight:700,color:'var(--burg)',marginBottom:4}},'Current PWA Lyrics:'),
+                h('pre',{style:{fontSize:11,fontFamily:'sans-serif',whiteSpace:'pre-wrap',background:'rgba(255,255,255,0.6)',padding:8,borderRadius:8,border:'1px solid var(--border)',maxHeight:220,overflowY:'auto'}},song.lyrics)),
+              h('div',null,
+                h('div',{style:{fontSize:12,fontWeight:700,color:'var(--burg)',marginBottom:4}},'Pasted Lyrics:'),
+                h('pre',{style:{fontSize:11,fontFamily:'sans-serif',whiteSpace:'pre-wrap',background:'rgba(255,255,255,0.6)',padding:8,borderRadius:8,border:'1px solid var(--border)',maxHeight:220,overflowY:'auto'}},parsedResult?parsedResult.pastedLyrics:''))),
+            h('button',{className:'btn btn-outline btn-sm',onClick:()=>setPasteStep('preview')},'← Back to Preview'))
+
+          :null)
+
         :localChords?h('div',{style:{paddingBottom:8}},
+
           chordSheetTr.map((item,i)=>{
             if(item.type==='section')return h('div',{key:i,style:{fontSize:12,fontWeight:800,color:'var(--burg)',textTransform:'uppercase',letterSpacing:'0.5px',margin:'16px 0 6px'}},item.text);
             if(item.type==='gap')return h('div',{key:i,style:{height:8}});
