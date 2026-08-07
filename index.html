@@ -5239,7 +5239,7 @@
         doc.text('CFC Choir — Chords', ML, 12);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
         doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }), ML, 19);
-        const CH = 4.5, LH = 5.8, GH = 3.5, BOT = 20;
+        const LH = 5.8, GH = 3.5, BOT = 20;
         const drawSongHeader = (song, idx) => {
           if (idx > 0) doc.addPage();
           let y = MT + 10;
@@ -5262,22 +5262,39 @@
           return y;
         };
         const drawChordLine = (song, text, y) => {
-          const parsedLine = (parseChords(text, 0) || [])[0] || { text: '', chords: [] };
-          if (!parsedLine.text && !parsedLine.chords.length) return y;
-          if (y + CH + LH + 1 > PH - BOT) {
-            doc.addPage(); y = MT + 10;
-            doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.setTextColor(...teal);
-            doc.text(song.title + ' (cont.)', ML, y - 2); doc.setTextColor(...ink); y += 2;
+          const parts = text.split(/(\[[A-G][#b]?[^\]]*\])/g);
+          const segs = [];
+          for (const p of parts) {
+            if (!p) continue;
+            const m = p.match(/^\[([A-G][#b]?[^\]]*)\]$/);
+            segs.push(m ? { t: m[1], chord: true } : { t: p, chord: false });
           }
-          const hasC = parsedLine.chords && parsedLine.chords.length > 0;
-          if (hasC) {
-            doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...teal);
-            parsedLine.chords.slice().reverse().forEach(c => { const cx = ML + (c.pos * 2.1); if (cx < PW - MR) doc.text(c.chord, Math.min(cx, PW - MR - 8), y + CH - 0.5); });
-            y += CH;
+          if (!segs.length) return y;
+          doc.setFont('courier', 'normal'); doc.setFontSize(10.5);
+          const segWidth = s => { doc.setFont('courier', s.chord ? 'bold' : 'normal'); return doc.getTextWidth(s.t); };
+          let lines = [], cur = [], curW = 0;
+          for (const s of segs) {
+            const w = segWidth(s);
+            if (curW + w > TW && cur.length) { lines.push(cur); cur = []; curW = 0; }
+            cur.push(s); curW += w;
           }
-          doc.setFontSize(10.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...ink);
-          doc.text((doc.splitTextToSize(parsedLine.text || ' ', TW))[0] || ' ', ML, y + LH - 1);
-          return y + LH + 0.5;
+          if (cur.length) lines.push(cur);
+          for (const line of lines) {
+            if (y + LH + 1 > PH - BOT) {
+              doc.addPage(); y = MT + 10;
+              doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.setTextColor(...teal);
+              doc.text(song.title + ' (cont.)', ML, y - 2); doc.setTextColor(...ink); y += 2;
+            }
+            let x = ML;
+            for (const s of line) {
+              doc.setFont('courier', s.chord ? 'bold' : 'normal');
+              doc.setTextColor(...(s.chord ? teal : ink));
+              doc.text(s.t, x, y);
+              x += doc.getTextWidth(s.t);
+            }
+            y += LH;
+          }
+          return y;
         };
         songs.forEach((song, idx) => {
           let y = drawSongHeader(song, idx);
