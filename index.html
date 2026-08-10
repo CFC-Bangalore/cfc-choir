@@ -5209,7 +5209,7 @@
       // of being mixed inline with the lyric text.
       const parsed = parseChords(text, 0);
       const line = (parsed && parsed[0]) || { text: '', chords: [] };
-      const hasChords = line.chords && line.chords.length;
+      const hasChords = !!(line.chords && line.chords.length);
       const mono = { fontFamily: 'var(--mono)', fontSize: 'var(--reader-fs, 14px)', lineHeight: 1.85 };
       return h('div', { key, className: 'lyric-block', style: { marginBottom: 4, animation: 'fadeIn .3s ease both', animationDelay: Math.min(key * 15, 300) + 'ms' } },
         hasChords && h('div', { className: 'chord-row', style: { fontFamily: 'var(--mono)', fontSize: 'var(--reader-fs, 14px)' } },
