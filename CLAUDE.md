@@ -265,6 +265,134 @@ Future themes:
 * Advanced Printing
 * Modern Design System
 
+\___
+
+# 16A. Historical Song Data Integration
+
+The repository may contain the following prepared historical datasets:
+
+- `CFC_PWA_History_Import.json` — PWA-ready historical integration data
+- `cfc_song_history.json` — complete/master historical reference data
+
+The original historical Word document has already been processed into these JSON files.
+
+## Historical Data Rules
+
+Do NOT:
+
+- Reprocess the original Word document.
+- Recreate the historical dataset.
+- Create duplicate song records.
+- Change existing song IDs.
+- Guess uncertain historical song matches.
+- Overwrite current song metadata with historical data.
+- Create a separate database for historical songs.
+
+For normal PWA runtime integration, use:
+
+`CFC_PWA_History_Import.json`
+
+Do NOT load both historical JSON files into the runtime.
+
+`cfc_song_history.json` is the master/reference dataset and should only be consulted when additional historical information is genuinely required.
+
+## Commonly Sung
+
+Use the `commonSongUpdates` section from `CFC_PWA_History_Import.json`.
+
+Historical information may populate:
+
+- `commonlySung`
+- `historicalSungCount`
+- `historicalFirstSung`
+- `historicalLastSung`
+- `historicalYears`
+- `recent2YearSungCount`
+- `recent2YearFirstSung`
+- `recent2YearLastSung`
+
+Existing song IDs and current song metadata remain authoritative.
+
+Do not overwrite:
+
+- lyrics
+- chords
+- scale/key
+- YouTube URLs
+- Ultimate Guitar URLs
+- other current song metadata
+
+The existing Random Picker, Commonly Sung behavior, cooldown/resting logic, pinning, force include, force cooldown and occasion filtering must continue to work.
+
+## Historical Setlist Archive
+
+Use the `setlists` section from `CFC_PWA_History_Import.json`.
+
+Historical setlists are READ-ONLY.
+
+Historical setlists should reference existing PWA song IDs rather than duplicate complete song records.
+
+The Setlist Archive should support:
+
+- browsing historical dates
+- viewing songs sung on a selected date
+- searching historical records by song title
+- viewing all historical dates for a selected song
+- opening a historical song using the existing song detail/lyrics/chords view
+
+Historical records must not interfere with current setlist editing or cooldown/resting logic.
+
+## Unmatched Historical Songs
+
+Do not automatically create new songs for entries listed in:
+
+- `unmatchedTitles`
+- `reviewMatches`
+
+Do not guess ambiguous matches.
+
+These records should remain available for manual review.
+
+## Historical Data and JSON Schema Exception
+
+The general repository rule says:
+
+"Never change JSON structures unless explicitly requested."
+
+Historical song integration is an explicitly requested feature.
+
+Therefore, modifications required to integrate the prepared historical data are permitted, provided that:
+
+- existing song IDs are preserved
+- existing current song data is preserved
+- existing JSON structures are changed only where necessary
+- duplicate data is avoided
+- unrelated JSON schemas are not modified
+
+## Historical Data Performance
+
+Do not repeatedly parse or transform historical data during every UI render.
+
+Load historical data once and create efficient lookup structures where appropriate, such as:
+
+- date → historical setlist
+- songId → historical dates
+- songId → historical statistics
+
+## Historical Data Source of Truth
+
+For current song information:
+
+`songs-data.json` remains authoritative.
+
+For historical information:
+
+`CFC_PWA_History_Import.json` is the runtime integration source.
+
+`cfc_song_history.json` is the complete/master historical reference.
+
+The historical archive must remain traceable to the source data.
+
 \---
 
 # 17\. Working Method
